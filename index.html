@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Keola Books</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #f6f4ef;
+      color: #18251f;
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Arial,
+        sans-serif;
+    }
+
+    header {
+      background: #18251f;
+      color: white;
+      padding: 28px 20px;
+    }
+
+    .header-content {
+      max-width: 1100px;
+      margin: auto;
+    }
+
+    .logo {
+      font-size: 14px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      opacity: .75;
+    }
+
+    h1 {
+      margin: 8px 0 4px;
+      font-size: 32px;
+    }
+
+    .subtitle {
+      margin: 0;
+      opacity: .75;
+    }
+
+    main {
+      max-width: 1100px;
+      margin: auto;
+      padding: 20px;
+    }
+
+    .search-box {
+      background: white;
+      padding: 20px;
+      border-radius: 20px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.06);
+      margin-bottom: 18px;
+    }
+
+    .search-box label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .search-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    #search {
+      flex: 1;
+      min-width: 0;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      font-size: 16px;
+      outline: none;
+    }
+
+    #search:focus {
+      border-color: #1f5b47;
+    }
+
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 13px 18px;
+      background: #1f5b47;
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .quick-searches {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .quick-searches button {
+      background: #eaf1ed;
+      color: #1f5b47;
+      padding: 8px 12px;
+      font-size: 13px;
+    }
+
+    .filters {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    select {
+      width: 100%;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid #ddd;
+      background: white;
+      color: #18251f;
+    }
+
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      color: #66706b;
+      font-size: 14px;
+    }
+
+    .books {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .book {
+      background: white;
+      border: 1px solid #e1ded7;
+      border-radius: 18px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      min-height: 250px;
+    }
+
+    .category {
+      color: #1f5b47;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 8px;
+    }
+
+    .book h2 {
+      font-size: 18px;
+      line-height: 1.25;
+      margin: 0 0 7px;
+    }
+
+    .author {
+      color: #66706b;
+      font-size: 14px;
+      margin-bottom: 14px;
+    }
+
+    .description {
+      color: #444;
+      line-height: 1.5;
+      font-size: 14px;
+      flex: 1;
+    }
+
+    .book button {
+      margin-top: 15px;
+      align-self: flex-start;
+    }
+
+    .empty {
+      background: white;
+      padding: 40px;
+      border-radius: 18px;
+      text-align: center;
+      color: #66706b;
+    }
+
+    dialog {
+      border: 0;
+      border-radius: 22px;
+      width: min(700px, calc(100% - 30px));
+      padding: 0;
+      box-shadow: 0 25px 80px rgba(0,0,0,.3);
+    }
+
+    dialog::backdrop {
+      background: rgba(0,0,0,.5);
+    }
+
+    .modal {
+      padding: 25px;
+    }
+
+    .modal-close {
+      float: right;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      padding: 0;
+      background: #eee;
+      color: #222;
+      font-size: 20px;
+    }
+
+    .modal h2 {
+      font-size: 27px;
+      margin: 5px 45px 5px 0;
+    }
+
+    .modal h3 {
+      margin-top: 22px;
+      font-size: 15px;
+    }
+
+    .modal p {
+      line-height: 1.6;
+      color: #444;
+    }
+
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      margin: 14px 0;
+    }
+
+    .tag {
+      background: #eaf1ed;
+      color: #1f5b47;
+      border-radius: 30px;
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+
+    @media (max-width: 800px) {
+      .books {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .filters {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 550px) {
+      h1 {
+        font-size: 26px;
+      }
+
+      .search-row {
+        flex-direction: column;
+      }
+
+      .search-row button {
+        width: 100%;
+      }
+
+      .books {
+        grid-template-columns: 1fr;
+      }
+
+      .filters {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <div class="header-content">
+    <div class="logo">Keola</div>
+    <h1>Keola Books</h1>
+    <p class="subtitle">
+      Encontre o livro certo para cada pessoa.
+    </p>
+  </div>
+</header>
+
+<main>
+
+  <section class="search-box">
+
+    <label for="search">
+      O que você está procurando?
+    </label>
+
+    <div class="search-row">
+
+      <input
+        id="search"
+        type="search"
+        placeholder="Ex.: casamento, ansiedade, pais, liderança..."
+      >
+
+      <button onclick="buscar()">
+        Buscar
+      </button>
+
+    </div>
+
+    <div class="quick-searches">
+
+      <button onclick="buscaRapida('casamento')">
+        Casamento
+      </button>
+
+      <button onclick="buscaRapida('pais')">
+        Pais
+      </button>
+
+      <button onclick="buscaRapida('cura')">
+        Cura emocional
+      </button>
+
+      <button onclick="buscaRapida('liderança')">
+        Liderança
+      </button>
+
+      <button onclick="buscaRapida('mulheres')">
+        Mulheres
+      </button>
+
+    </div>
+
+  </section>
+
+  <section class="filters">
+
+    <select id="categoria" onchange="buscar()">
+      <option value="">Todas as categorias</option>
+    </select>
+
+    <select id="tema" onchange="buscar()">
+      <option value="">Todos os temas</option>
+    </select>
+
+    <select id="autor" onchange="buscar()">
+      <option value="">Todos os autores</option>
+    </select>
+
+    <select id="editora" onchange="buscar()">
+      <option value="">Todas as editoras</option>
+    </select>
+
+  </section>
+
+  <div class="results-header">
+
+    <span id="contador">
+      Carregando catálogo...
+    </span>
+
+    <button onclick="limpar()">
+      Limpar
+    </button>
+
+  </div>
+
+  <section id="livros" class="books"></section>
+
+</main>
+
+
+<dialog id="modal">
+
+  <div class="modal">
+
+    <button
+      class="modal-close"
+      onclick="document.getElementById('modal').close()"
+    >
+      ×
+    </button>
+
+    <div id="modal-content"></div>
+
+  </div>
+
+</dialog>
+
+
+<script>
+
+/*
+=========================================================
+ KEOLA BOOKS
+ Catálogo
+=========================================================
+*/
+
+let livros = [];
+
+
+/*
+=========================================================
+ NORMALIZAÇÃO
+=========================================================
+*/
+
+function normalizar(texto) {
+
+  return String(texto || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
+}
+
+
+/*
+=========================================================
+ ESCAPE HTML
+=========================================================
+*/
+
+function escapeHTML(texto) {
+
+  return String(texto || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+}
+
+
+/*
+=========================================================
+ DADOS
+=========================================================
+
+IMPORTANTE:
+
+Nesta primeira versão vamos carregar os livros
+diretamente de uma fonte externa.
+
+Na próxima etapa vamos ligar este endereço
+à planilha Google Sheets da Keola.
+=========================================================
+*/
+
+
+/*
+=========================================================
+ FUNÇÃO DE BUSCA
+=========================================================
+*/
+
+function buscar() {
+
+  const pesquisa =
+    normalizar(
+      document.getElementById("search").value
+    );
+
+  const categoria =
+    document.getElementById("categoria").value;
+
+  const tema =
+    document.getElementById("tema").value;
+
+  const autor =
+    document.getElementById("autor").value;
+
+  const editora =
+    document.getElementById("editora").value;
+
+
+  let resultados = livros.filter(livro => {
+
+    if (
+      categoria &&
+      String(livro.categoria) !== categoria
+    ) {
+      return false;
+    }
+
+    if (
+      tema &&
+      String(livro.tema) !== tema
+    ) {
+      return false;
+    }
+
+    if (
+      autor &&
+      String(livro.autor) !== autor
+    ) {
+      return false;
+    }
+
+    if (
+      editora &&
+      String(livro.editora) !== editora
+    ) {
+      return false;
+    }
+
+    if (!pesquisa) {
+      return true;
+    }
+
+    const texto = normalizar(
+      [
+        livro.titulo,
+        livro.autor,
+        livro.editora,
+        livro.categoria,
+        livro.tema,
+        livro.subtemas,
+        livro.palavras,
+        livro.necessidades,
+        livro.perfil,
+        livro.sinopse
+      ].join(" ")
+    );
+
+    return texto.includes(pesquisa);
+
+  });
+
+
+  renderizar(resultados);
+
+}
+
+
+/*
+=========================================================
+ RENDERIZAÇÃO
+=========================================================
+*/
+
+function renderizar(resultados) {
+
+  const container =
+    document.getElementById("livros");
+
+  document.getElementById("contador").textContent =
+    resultados.length +
+    (
+      resultados.length === 1
+        ? " livro encontrado"
+        : " livros encontrados"
+    );
+
+
+  if (!resultados.length) {
+
+    container.innerHTML = `
+      <div class="empty">
+        <strong>Nenhum livro encontrado.</strong>
+        <br><br>
+        Tente outra palavra ou limpe os filtros.
+      </div>
+    `;
+
+    return;
+
+  }
+
+
+  container.innerHTML =
+    resultados.map((livro, indice) => {
+
+      return `
+
+        <article class="book">
+
+          <div class="category">
+            ${escapeHTML(
+              livro.tema ||
+              livro.categoria ||
+              "Livro"
+            )}
+          </div>
+
+          <h2>
+            ${escapeHTML(livro.titulo)}
+          </h2>
+
+          <div class="author">
+            ${escapeHTML(livro.autor)}
+          </div>
+
+          <div class="description">
+
+            ${escapeHTML(
+              livro.sinopse ||
+              livro.apresentacao ||
+              "Consulte os detalhes deste livro."
+            )}
+
+          </div>
+
+          <button onclick="abrirLivro(${indice})">
+            Ver detalhes
+          </button>
+
+        </article>
+
+      `;
+
+    }).join("");
+
+}
+
+
+/*
+=========================================================
+ DETALHES
+=========================================================
+*/
+
+function abrirLivro(indice) {
+
+  const livro =
+    livrosFiltrados[indice];
+
+  if (!livro) return;
+
+
+  const tags = [
+
+    livro.tema,
+    livro.subtemas,
+    livro.perfil,
+    livro.tipo
+
+  ].filter(Boolean);
+
+
+  document.getElementById("modal-content").innerHTML = `
+
+    <div class="category">
+      ${escapeHTML(
+        livro.tema ||
+        livro.categoria ||
+        "Keola Books"
+      )}
+    </div>
+
+    <h2>
+      ${escapeHTML(livro.titulo)}
+    </h2>
+
+    <div class="author">
+
+      ${escapeHTML(livro.autor)}
+
+      ${
+        livro.editora
+          ? " · " + escapeHTML(livro.editora)
+          : ""
+      }
+
+    </div>
+
+
+    <div class="tags">
+
+      ${tags.map(tag => `
+        <span class="tag">
+          ${escapeHTML(tag)}
+        </span>
+      `).join("")}
+
+    </div>
+
+
+    <h3>
+      Sinopse
+    </h3>
+
+    <p>
+      ${escapeHTML(
+        livro.sinopse ||
+        "Não disponível."
+      )}
+    </p>
+
+
+    <h3>
+      Como apresentar ao cliente
+    </h3>
+
+    <p>
+      ${escapeHTML(
+        livro.apresentacao ||
+        "Não disponível."
+      )}
+    </p>
+
+
+    <h3>
+      Quando indicar
+    </h3>
+
+    <p>
+      ${escapeHTML(
+        livro.situacoes ||
+        "Não disponível."
+      )}
+    </p>
+
+
+    <h3>
+      Palavras-chave
+    </h3>
+
+    <p>
+      ${escapeHTML(
+        livro.palavras ||
+        "Não disponíveis."
+      )}
+    </p>
+
+  `;
+
+
+  document
+    .getElementById("modal")
+    .showModal();
+
+}
+
+
+/*
+=========================================================
+ BUSCA RÁPIDA
+=========================================================
+*/
+
+function buscaRapida(texto) {
+
+  document.getElementById("search").value =
+    texto;
+
+  buscar();
+
+}
+
+
+/*
+=========================================================
+ LIMPAR
+=========================================================
+*/
+
+function limpar() {
+
+  document.getElementById("search").value = "";
+
+  document.getElementById("categoria").value = "";
+
+  document.getElementById("tema").value = "";
+
+  document.getElementById("autor").value = "";
+
+  document.getElementById("editora").value = "";
+
+  buscar();
+
+}
+
+
+/*
+=========================================================
+ FILTROS
+=========================================================
+*/
+
+function preencherFiltros() {
+
+  const categorias =
+    [...new Set(
+      livros
+        .map(l => l.categoria)
+        .filter(Boolean)
+    )].sort();
+
+
+  const temas =
+    [...new Set(
+      livros
+        .map(l => l.tema)
+        .filter(Boolean)
+    )].sort();
+
+
+  const autores =
+    [...new Set(
+      livros
+        .map(l => l.autor)
+        .filter(Boolean)
+    )].sort();
+
+
+  const editoras =
+    [...new Set(
+      livros
+        .map(l => l.editora)
+        .filter(Boolean)
+    )].sort();
+
+
+  preencherSelect(
+    "categoria",
+    categorias
+  );
+
+  preencherSelect(
+    "tema",
+    temas
+  );
+
+  preencherSelect(
+    "autor",
+    autores
+  );
+
+  preencherSelect(
+    "editora",
+    editoras
+  );
+
+}
+
+
+function preencherSelect(id, valores) {
+
+  const select =
+    document.getElementById(id);
+
+
+  valores.forEach(valor => {
+
+    const option =
+      document.createElement("option");
+
+    option.value = valor;
+
+    option.textContent = valor;
+
+    select.appendChild(option);
+
+  });
+
+}
+
+
+/*
+=========================================================
+ DADOS TEMPORÁRIOS
+=========================================================
+
+Por enquanto deixamos o catálogo vazio.
+
+Depois vamos conectar diretamente ao
+Google Sheets e carregar os 362 livros.
+
+=========================================================
+*/
+
+let livrosFiltrados = [];
+
+
+/*
+=========================================================
+ INICIALIZAÇÃO
+=========================================================
+*/
+
+function iniciar() {
+
+  livrosFiltrados = livros;
+
+  preencherFiltros();
+
+  renderizar(livros);
+
+}
+
+
+iniciar();
+
+</script>
+
+</body>
+</html>
