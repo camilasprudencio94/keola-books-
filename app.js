@@ -1,261 +1,120 @@
 
-const state = { books: [], filtered: [] };
+"use strict";
+
+const state = {
+  books: [],
+  filtered: []
+};
 
 const $ = id => document.getElementById(id);
 
-const VOLUNTEER_KEY = "keola_volunteer_v1";
-const HISTORY_KEY = "keola_search_history_v1";
-const MAX_HISTORY = 500;
+/* =====================================================
+   RASTREAMENTO LOCAL — NÃO APARECE NA INTERFACE
+   Os eventos ficam apenas no navegador atual.
+   ===================================================== */
 
-function text(v) {
-  return v == null ? "" : String(v);
+const TRACKING_KEY = "keola_book_tracking_v2";
+const MAX_EVENTS = 5000;
+
+function readTracking() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TRACKING_KEY) || "[]");
+    return Array.isArray(stored) ? stored : [];
+  } catch (error) {
+    console.warn("Não foi possível ler o histórico local.", error);
+    return [];
+  }
 }
 
-function norm(v) {
-  return text(v).toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+function trackEvent(type, details = {}) {
+  try {
+    const events = readTracking();
+
+    events.push({
+      type,
+      details,
+      timestamp: new Date().toISOString()
+    });
+
+    localStorage.setItem(
+      TRACKING_KEY,
+      JSON.stringify(events.slice(-MAX_EVENTS))
+    );
+  } catch (error) {
+    // A falha no rastreamento não deve impedir a busca de livros.
+    console.warn("Não foi possível registrar este evento.", error);
+  }
 }
 
-function esc(v) {
-  return text(v).replace(/[&<>"']/g, m => ({
+/*
+ * Exportação local para manutenção.
+ * Para usar: abra o site, abra o console do navegador e execute:
+ * keolaExportLocalStats()
+ *
+ * Isso exporta apenas o histórico deste navegador.
+ */
+window.keolaExportLocalStats = function () {
+  const events = readTracking();
+
+  const blob = new Blob(
+    [JSON.stringify(events, null, 2)],
+    { type: "application/json;charset=utf-8" }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+
+  link.href = url;
+  link.download = "keola-historico-local.json";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+};
+
+/* =====================================================
+   UTILITÁRIOS E BUSCA
+   ===================================================== */
+
+function text(value) {
+  return value == null ? "" : String(value);
+}
+
+function norm(value) {
+  return text(value)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function esc(value) {
+  return text(value).replace(/[&<>"']/g, character => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
     '"': "&quot;",
     "'": "&#039;"
-  }[m]));
+  }[character]));
 }
 
 const FIELDS = [
-  "Título", "Autor", "Editora", "Categoria original", "Grupo",
-  "Tema original", "Tema principal", "Subtemas", "Palavras-chave",
-  "Necessidades relacionadas", "Perfil de leitor", "Tipo de livro",
-  "Sinopse de consulta", "Como apresentar ao cliente (base)",
+  "Título",
+  "Autor",
+  "Editora",
+  "Categoria original",
+  "Grupo",
+  "Tema original",
+  "Tema principal",
+  "Subtemas",
+  "Palavras-chave",
+  "Necessidades relacionadas",
+  "Perfil de leitor",
+  "Tipo de livro",
+  "Sinopse de consulta",
+  "Como apresentar ao cliente (base)",
   "Situações de indicação"
 ];
-
-/* ---------------------------
-   Identificação do voluntário
-   --------------------------- */
-
-function getVolunteer() {
-  try {
-    return localStorage.getItem(VOLUNTEER_KEY) || "";
-  } catch (error) {
-    return "";
-  }
-}
-
-function setVolunteer(name) {
-  const cleanName = text(name).trim().slice(0, 80);
-
-  if (!cleanName) {
-    alert("Informe um nome para identificar o uso do catálogo.");
-    return false;
-  }
-
-  try {
-    localStorage.setItem(VOLUNTEER_KEY, cleanName);
-  } catch (error) {
-    alert("Não foi possível guardar a identificação neste navegador.");
-    return false;
-  }
-
-  updateVolunteerDisplay();
-  return true;
-}
-
-function askVolunteer(force = false) {
-  const current = getVolunteer();
-
-  if (current && !force) {
-    updateVolunteerDisplay();
-    return;
-  }
-
-  const answer = prompt(
-    "Digite seu nome para identificar suas pesquisas neste navegador:",
-    current
-  );
-
-  if (answer === null) {
-    if (!current) setVolunteer("Não identificado");
-    updateVolunteerDisplay();
-    return;
-  }
-
-  if (answer.trim()) {
-    setVolunteer(answer);
-  } else {
-    alert("O nome não pode ficar vazio.");
-    askVolunteer(true);
-  }
-}
-
-function updateVolunteerDisplay() {
-  $("volunteerName").textContent = getVolunteer() || "Não identificado";
-}
-
-/* ---------------------------
-   Histórico local de pesquisas
-   --------------------------- */
-
-function readHistory() {
-  try {
-    const value = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
-    return Array.isArray(value) ? value : [];
-  } catch (error) {
-    return [];
-  }
-}
-
-function saveHistory(history) {
-  try {
-    localStorage.setItem(
-      HISTORY_KEY,
-      JSON.stringify(history.slice(-MAX_HISTORY))
-    );
-    return true;
-  } catch (error) {
-    alert("Não foi possível guardar o histórico neste navegador.");
-    return false;
-  }
-}
-
-function registerSearch(origin) {
-  const query = $("search").value.trim();
-  const filters = {
-    categoria: $("categoria").value,
-    tema: $("tema").value,
-    autor: $("autor").value,
-    editora: $("editora").value
-  };
-
-  // Não registra uma ação totalmente vazia.
-  if (!query && !Object.values(filters).some(Boolean)) return;
-
-  const history = readHistory();
-
-  history.push({
-    volunteer: getVolunteer() || "Não identificado",
-    query,
-    filters,
-    origin,
-    results: state.filtered.length,
-    timestamp: new Date().toISOString()
-  });
-
-  saveHistory(history);
-  renderStats();
-}
-
-function renderStats() {
-  const history = readHistory();
-
-  $("statsSummary").textContent =
-    `${history.length} pesquisa(s) registrada(s) neste navegador.`;
-
-  const counts = {};
-
-  history.forEach(item => {
-    const term = text(item.query).trim();
-    if (!term) return;
-    const key = norm(term);
-    if (!key) return;
-
-    if (!counts[key]) {
-      counts[key] = { term, count: 0 };
-    }
-
-    counts[key].count++;
-  });
-
-  const top = Object.values(counts)
-    .sort((a, b) => b.count - a.count || a.term.localeCompare(b.term, "pt-BR"))
-    .slice(0, 10);
-
-  if (!top.length) {
-    $("topSearches").innerHTML =
-      "<p>Nenhuma pesquisa por palavra foi registrada ainda.</p>";
-    return;
-  }
-
-  $("topSearches").innerHTML = `
-    <h4>Termos mais pesquisados</h4>
-    <ol>
-      ${top.map(item =>
-        `<li>${esc(item.term)} — ${item.count} vez(es)</li>`
-      ).join("")}
-    </ol>
-  `;
-}
-
-function exportHistory() {
-  const history = readHistory();
-
-  if (!history.length) {
-    alert("Ainda não há pesquisas registradas para exportar.");
-    return;
-  }
-
-  const rows = [
-    ["Data e hora", "Voluntário informado", "Pesquisa", "Categoria",
-      "Tema", "Autor", "Editora", "Origem", "Resultados"]
-  ];
-
-  history.forEach(item => {
-    rows.push([
-      item.timestamp || "",
-      item.volunteer || "",
-      item.query || "",
-      item.filters?.categoria || "",
-      item.filters?.tema || "",
-      item.filters?.autor || "",
-      item.filters?.editora || "",
-      item.origin || "",
-      item.results ?? ""
-    ]);
-  });
-
-  const csv = "\uFEFF" + rows.map(row =>
-    row.map(value =>
-      `"${text(value).replace(/"/g, '""')}"`
-    ).join(";")
-  ).join("\r\n");
-
-  const blob = new Blob([csv], {
-    type: "text/csv;charset=utf-8;"
-  });
-
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "keola-historico-local.csv";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function clearHistory() {
-  const confirmed = confirm(
-    "Deseja apagar o histórico de pesquisas deste navegador? Essa ação não pode ser desfeita."
-  );
-
-  if (!confirmed) return;
-
-  try {
-    localStorage.removeItem(HISTORY_KEY);
-    renderStats();
-    alert("Histórico local apagado.");
-  } catch (error) {
-    alert("Não foi possível apagar o histórico.");
-  }
-}
-
-/* ---------------------------
-   Busca e filtros do catálogo
-   --------------------------- */
 
 function score(book, query) {
   if (!query) return 0;
@@ -267,18 +126,24 @@ function score(book, query) {
     const title = norm(book["Título"]);
     const author = norm(book["Autor"]);
 
-    if (title === term) total += 120;
-    else if (title.includes(term)) total += 70;
+    if (title === term) {
+      total += 120;
+    } else if (title.includes(term)) {
+      total += 70;
+    }
 
-    if (author.includes(term)) total += 45;
+    if (author.includes(term)) {
+      total += 45;
+    }
 
     for (const field of FIELDS.slice(3)) {
       const value = norm(book[field]);
 
       if (value.includes(term)) {
-        total += field === "Tema principal" ? 28 :
-          field === "Necessidades relacionadas" ? 22 :
-          field === "Palavras-chave" ? 18 : 8;
+        total += field === "Tema principal" ? 28
+          : field === "Necessidades relacionadas" ? 22
+          : field === "Palavras-chave" ? 18
+          : 8;
       }
     }
   }
@@ -286,10 +151,18 @@ function score(book, query) {
   return total;
 }
 
+/* =====================================================
+   FILTROS
+   ===================================================== */
+
 function unique(field) {
-  return [...new Set(
-    state.books.map(book => text(book[field])).filter(Boolean)
-  )].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return [
+    ...new Set(
+      state.books
+        .map(book => text(book[field]))
+        .filter(Boolean)
+    )
+  ].sort((a, b) => a.localeCompare(b, "pt-BR"));
 }
 
 function fillSelect(id, field) {
@@ -310,32 +183,50 @@ function setupFilters() {
   fillSelect("editora", "Editora");
 }
 
+function currentFilters() {
+  return {
+    categoria: $("categoria").value,
+    tema: $("tema").value,
+    autor: $("autor").value,
+    editora: $("editora").value
+  };
+}
+
 function filterBooks() {
   const query = norm($("search").value.trim());
-  const category = $("categoria").value;
-  const theme = $("tema").value;
-  const author = $("autor").value;
-  const publisher = $("editora").value;
+  const filters = currentFilters();
 
   state.filtered = state.books
     .filter(book =>
-      (!category || text(book["Categoria original"]) === category) &&
-      (!theme || text(book["Tema principal"]) === theme) &&
-      (!author || text(book["Autor"]) === author) &&
-      (!publisher || text(book["Editora"]) === publisher)
+      (!filters.categoria ||
+        text(book["Categoria original"]) === filters.categoria) &&
+      (!filters.tema ||
+        text(book["Tema principal"]) === filters.tema) &&
+      (!filters.autor ||
+        text(book["Autor"]) === filters.autor) &&
+      (!filters.editora ||
+        text(book["Editora"]) === filters.editora)
     )
-    .map(book => ({ book, score: score(book, query) }))
+    .map(book => ({
+      book,
+      score: score(book, query)
+    }))
     .filter(item => !query || item.score > 0)
     .sort((a, b) =>
       b.score - a.score ||
       text(a.book["Título"]).localeCompare(
-        text(b.book["Título"]), "pt-BR"
+        text(b.book["Título"]),
+        "pt-BR"
       )
     )
     .map(item => item.book);
 
   render();
 }
+
+/* =====================================================
+   EXIBIÇÃO DOS LIVROS
+   ===================================================== */
 
 function render() {
   const books = state.filtered;
@@ -344,9 +235,12 @@ function render() {
     `${books.length} livro${books.length === 1 ? "" : "s"} encontrado${books.length === 1 ? "" : "s"}`;
 
   if (!books.length) {
-    $("results").innerHTML =
-      `<div class="empty"><strong>Nenhum livro encontrado.</strong><br><br>
-       Tente outra palavra ou limpe os filtros.</div>`;
+    $("results").innerHTML = `
+      <div class="empty">
+        <strong>Nenhum livro encontrado.</strong><br><br>
+        Tente outra palavra ou limpe os filtros.
+      </div>
+    `;
     return;
   }
 
@@ -358,14 +252,27 @@ function render() {
 
     return `
       <article class="card">
-        <div class="tag">${esc(book["Tema principal"] || book["Categoria original"] || "Livro")}</div>
-        <h3>${esc(book["Título"] || "Sem título")}</h3>
-        <div class="author">${esc(book["Autor"] || "Autor não informado")}</div>
-        <div class="desc">${esc(description).slice(0, 280)}${description.length > 280 ? "…" : ""}</div>
-        <div class="card-actions">
-          <button class="btn" data-book-index="${index}">Ver detalhes</button>
+        <div class="tag">
+          ${esc(book["Tema principal"] || book["Categoria original"] || "Livro")}
         </div>
-      </article>`;
+
+        <h3>${esc(book["Título"] || "Sem título")}</h3>
+
+        <div class="author">
+          ${esc(book["Autor"] || "Autor não informado")}
+        </div>
+
+        <div class="desc">
+          ${esc(description).slice(0, 280)}${description.length > 280 ? "…" : ""}
+        </div>
+
+        <div class="card-actions">
+          <button class="btn" data-book-index="${index}">
+            Ver detalhes
+          </button>
+        </div>
+      </article>
+    `;
   }).join("");
 
   document.querySelectorAll("[data-book-index]").forEach(button => {
@@ -379,6 +286,14 @@ function openBook(index) {
   const book = state.filtered[index];
   if (!book) return;
 
+  // Registra o interesse pelo título sem exibir qualquer dado na página.
+  trackEvent("book_opened", {
+    title: text(book["Título"]),
+    author: text(book["Autor"]),
+    publisher: text(book["Editora"]),
+    theme: text(book["Tema principal"])
+  });
+
   const tags = [
     book["Tema principal"],
     book["Subtemas"],
@@ -387,8 +302,12 @@ function openBook(index) {
   ].filter(Boolean);
 
   $("modalContent").innerHTML = `
-    <div class="tag">${esc(book["Tema principal"] || "Keola Books")}</div>
+    <div class="tag">
+      ${esc(book["Tema principal"] || "Keola Books")}
+    </div>
+
     <h2>${esc(book["Título"] || "Sem título")}</h2>
+
     <div class="author">
       ${esc(book["Autor"] || "Autor não informado")}
       ${book["Editora"] ? " · " + esc(book["Editora"]) : ""}
@@ -417,64 +336,104 @@ function openBook(index) {
   $("modal").showModal();
 }
 
-function clearFilters() {
-  $("search").value = "";
-  ["categoria", "tema", "autor", "editora"].forEach(id => {
-    $(id).value = "";
+/* =====================================================
+   AÇÕES DE PESQUISA
+   ===================================================== */
+
+function registerSearch(origin) {
+  const query = $("search").value.trim();
+  const filters = currentFilters();
+
+  // Não registra consultas completamente vazias.
+  if (!query && !Object.values(filters).some(Boolean)) {
+    return;
+  }
+
+  trackEvent("search", {
+    query,
+    filters,
+    origin,
+    resultCount: state.filtered.length
   });
-  filterBooks();
 }
 
 function quickSearch(query) {
   $("search").value = query;
   filterBooks();
+
   registerSearch("atalho");
 }
 
-/* ---------------------------
-   Carregamento e eventos
-   --------------------------- */
+function clearFilters() {
+  $("search").value = "";
+
+  ["categoria", "tema", "autor", "editora"].forEach(id => {
+    $(id).value = "";
+  });
+
+  filterBooks();
+}
+
+function handleSearch() {
+  filterBooks();
+  registerSearch("botao_buscar");
+}
+
+/* =====================================================
+   CARREGAMENTO DO CATÁLOGO
+   ===================================================== */
 
 async function loadCatalog() {
   try {
-    const response = await fetch("./catalogo.json", { cache: "no-store" });
+    const response = await fetch("./catalogo.json", {
+      cache: "no-store"
+    });
 
     if (!response.ok) {
       throw new Error("Não foi possível carregar catalogo.json");
     }
 
-    state.books = await response.json();
+    const data = await response.json();
 
-    if (!Array.isArray(state.books)) {
-      throw new Error("O formato do catálogo não é uma lista de livros.");
+    if (!Array.isArray(data)) {
+      throw new Error("O catálogo precisa conter uma lista de livros.");
     }
+
+    state.books = data;
 
     setupFilters();
     filterBooks();
   } catch (error) {
     console.error(error);
+
     $("count").textContent = "Erro ao carregar o catálogo";
-    $("results").innerHTML =
-      `<div class="empty">
+
+    $("results").innerHTML = `
+      <div class="empty">
         Não foi possível carregar o catálogo.<br><br>
-        Confirme se <strong>catalogo.json</strong> está na mesma pasta do index.html
-        e se contém um JSON válido.
-      </div>`;
+        Confirme se <strong>catalogo.json</strong> está na mesma pasta
+        do index.html e contém um JSON válido.
+      </div>
+    `;
   }
 }
 
-$("search").addEventListener("input", filterBooks);
+/* =====================================================
+   EVENTOS DA INTERFACE
+   ===================================================== */
+
+$("searchBtn").addEventListener("click", handleSearch);
 
 $("search").addEventListener("keydown", event => {
   if (event.key === "Enter") {
-    filterBooks();
-    registerSearch("teclado");
+    handleSearch();
   }
 });
 
-$("searchBtn").addEventListener("click", () => {
-  filterBooks();
-  registerSearch("botao buscar");
+document.querySelectorAll("[data-q]").forEach(button => {
+  button.addEventListener("click", () => {
+    quickSearch(button.dataset.q);
+  });
 });
 
 ["categoria", "tema", "autor", "editora"].forEach(id => {
@@ -485,20 +444,16 @@ $("searchBtn").addEventListener("click", () => {
 });
 
 $("clearBtn").addEventListener("click", clearFilters);
-$("closeModal").addEventListener("click", () => $("modal").close());
 
-document.querySelectorAll("[data-q]").forEach(button => {
-  button.addEventListener("click", () => quickSearch(button.dataset.q));
+$("closeModal").addEventListener("click", () => {
+  $("modal").close();
 });
 
 $("modal").addEventListener("click", event => {
-  if (event.target === $("modal")) $("modal").close();
+  if (event.target === $("modal")) {
+    $("modal").close();
+  }
 });
 
-$("changeVolunteer").addEventListener("click", () => askVolunteer(true));
-$("exportStats").addEventListener("click", exportHistory);
-$("clearStats").addEventListener("click", clearHistory);
-
-askVolunteer();
-renderStats();
+// Inicia o site.
 loadCatalog();
