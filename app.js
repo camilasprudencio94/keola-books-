@@ -1,940 +1,324 @@
-/* Keola Books — app.js */
 
-(() => {
-  "use strict";
+const state = { books: [], filtered: [] };
 
-  const state = {
-    books: [],
-    filtered: []
-  };
+// CONFIGURAÇÃO: substitua pelos dados públicos do seu projeto Supabase.
+// Use apenas a Project URL e a publishable key (sb_publishable_...).
+// Nunca coloque a secret/service_role key neste arquivo.
+const SUPABASE_URL = "COLE_AQUI_A_PROJECT_URL";
+const SUPABASE_PUBLISHABLE_KEY = "COLE_AQUI_A_PUBLISHABLE_KEY";
+const ANALYTICS_ENABLED =
+  /^https:\/\/.+\.supabase\.co$/.test(SUPABASE_URL) &&
+  SUPABASE_PUBLISHABLE_KEY.startsWith("sb_publishable_");
+const FALLBACK_SEARCHES = [
+  { term: "casamento", label: "Casamento" },
+  { term: "pais", label: "Pais e filhos" },
+  { term: "cura emocional", label: "Cura emocional" },
+  { term: "lideranca", label: "Liderança" },
+  { term: "mulheres", label: "Mulheres" }
+];
 
-  const $ = (id) => document.getElementById(id);
+const $ = id => document.getElementById(id);
 
-  function text(value) {
-    return value == null ? "" : String(value);
+function text(v){ return v == null ? "" : String(v); }
+function norm(v){
+  return text(v).toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+function esc(v){
+  return text(v).replace(/[&<>"']/g,m=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[m]));
+}
+
+const FIELDS = [
+  "Título","Autor","Editora","Categoria original","Grupo",
+  "Tema original","Tema principal","Subtemas","Palavras-chave",
+  "Necessidades relacionadas","Perfil de leitor","Tipo de livro",
+  "Sinopse de consulta","Como apresentar ao cliente (base)",
+  "Situações de indicação"
+];
+
+function canonicalTerm(value){
+  return norm(value).replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim().slice(0,60);
+}
+
+async function supabaseRpc(name, payload){
+  if(!ANALYTICS_ENABLED) return null;
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_PUBLISHABLE_KEY,
+      "Authorization": `Bearer ${SUPABASE_PUBLISHABLE_KEY}`
+    },
+    body: JSON.stringify(payload || {})
+  });
+  if(!response.ok) throw new Error(`Supabase RPC ${name}: HTTP ${response.status}`);
+  const raw = await response.text();
+  return raw ? JSON.parse(raw) : null;
+}
+
+async function recordSearch(query){
+  const term = canonicalTerm(query);
+  if(!ANALYTICS_ENABLED || term.length < 2) return;
+  try{
+    await supabaseRpc("keola_record_search", { search_term: term });
+    await loadPopularSearches();
+  }catch(error){
+    // A falha de analytics não deve impedir a busca no catálogo.
+    console.warn("Não foi possível registrar a busca compartilhada.", error);
   }
+}
 
-  function normalize(value) {
-    return text(value)
-      .toLocaleLowerCase("pt-BR")
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim();
+function renderQuickSearches(items){
+  const container = $("quickSearches");
+  if(!container) return;
+  const label = document.createElement("span");
+  label.className = "quick-label";
+  label.textContent = "Mais pesquisados nos últimos 30 dias";
+  container.replaceChildren(label);
+
+  items.forEach(item=>{
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "chip";
+    button.dataset.q = item.term;
+    button.textContent = item.label || (item.term.charAt(0).toLocaleUpperCase("pt-BR") + item.term.slice(1));
+    button.title = `${item.search_count || 0} buscas nos últimos 30 dias`;
+    button.addEventListener("click",()=>quickSearch(item.term, true));
+    container.appendChild(button);
+  });
+}
+
+async function loadPopularSearches(){
+  if(!ANALYTICS_ENABLED){
+    renderQuickSearches(FALLBACK_SEARCHES);
+    return;
   }
-
-  function escapeHtml(value) {
-    return text(value).replace(/[&<>"']/g, (char) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
-    }[char]));
-  }
-
-  /* Campos que serão pesquisados */
-  const SEARCH_FIELDS = [
-    "Título",
-    "Autor",
-    "Editora",
-    "Categoria original",
-    "Grupo",
-    "Tema original",
-    "Tema principal",
-    "Subtemas",
-    "Palavras-chave",
-    "Necessidades relacionadas",
-    "Perfil de leitor",
-    "Tipo de livro",
-    "Sinopse de consulta",
-    "Como apresentar ao cliente (base)",
-    "Situações de indicação"
-  ];
-
-  function searchableText(book) {
-    return SEARCH_FIELDS
-      .map((field) => text(book[field]))
-      .join(" ");
-  }
-
-  /* Sistema de relevância da busca */
-  function scoreBook(book, query) {
-    if (!query) return 1;
-
-    const terms = normalize(query)
-      .split(/\s+/)
-      .filter(Boolean);
-
-    const title = normalize(book["Título"]);
-    const author = normalize(book["Autor"]);
-    const all = normalize(searchableText(book));
-
-    /* Todas as palavras digitadas precisam existir no livro */
-    if (!terms.every((term) => all.includes(term))) {
-      return 0;
+  try{
+    const rows = await supabaseRpc("keola_popular_searches", {});
+    if(Array.isArray(rows) && rows.length){
+      renderQuickSearches(rows.map(row=>({
+        term: row.term,
+        label: row.term.charAt(0).toLocaleUpperCase("pt-BR") + row.term.slice(1),
+        search_count: row.search_count
+      })));
+    }else{
+      // Até haver volume suficiente de buscas, mantém atalhos iniciais úteis.
+      renderQuickSearches(FALLBACK_SEARCHES);
     }
-
-    let score = 1;
-
-    for (const term of terms) {
-
-      if (title === term) {
-        score += 150;
-      } else if (title.includes(term)) {
-        score += 100;
-      }
-
-      if (author.includes(term)) {
-        score += 60;
-      }
-
-      if (
-        normalize(book["Tema principal"])
-          .includes(term)
-      ) {
-        score += 40;
-      }
-
-      if (
-        normalize(book["Necessidades relacionadas"])
-          .includes(term)
-      ) {
-        score += 35;
-      }
-
-      if (
-        normalize(book["Palavras-chave"])
-          .includes(term)
-      ) {
-        score += 30;
-      }
-
-      if (
-        normalize(book["Subtemas"])
-          .includes(term)
-      ) {
-        score += 25;
-      }
-    }
-
-    return score;
+  }catch(error){
+    console.warn("Não foi possível carregar as buscas populares.", error);
+    renderQuickSearches(FALLBACK_SEARCHES);
   }
+}
 
-  /* Valores únicos dos filtros */
-  function uniqueValues(field) {
-    return [
-      ...new Set(
-        state.books
-          .map((book) => text(book[field]).trim())
-          .filter(Boolean)
-      )
-    ].sort((a, b) =>
-      a.localeCompare(b, "pt-BR")
-    );
-  }
+function submitSearch(){
+  filterBooks();
+  recordSearch($("search").value);
+}
 
-  /* Preenche os filtros */
-  function populateSelect(id, field) {
-    const select = $(id);
+function score(book, query){
+  if(!query) return 0;
+  const terms = norm(query).split(/\s+/).filter(Boolean);
+  let total = 0;
 
-    if (!select) return;
+  for(const term of terms){
+    const title = norm(book["Título"]);
+    const author = norm(book["Autor"]);
 
-    while (select.options.length > 1) {
-      select.remove(1);
-    }
+    if(title === term) total += 120;
+    else if(title.includes(term)) total += 70;
 
-    for (const value of uniqueValues(field)) {
+    if(author.includes(term)) total += 45;
 
-      const option = document.createElement("option");
-
-      option.value = value;
-      option.textContent = value;
-
-      select.appendChild(option);
+    for(const field of FIELDS.slice(3)){
+      const value = norm(book[field]);
+      if(value.includes(term)){
+        total += field === "Tema principal" ? 28 :
+                 field === "Necessidades relacionadas" ? 22 :
+                 field === "Palavras-chave" ? 18 : 8;
+      }
     }
   }
+  return total;
+}
 
-  function setupFilters() {
+function unique(field){
+  return [...new Set(state.books.map(b=>text(b[field])).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,"pt-BR"));
+}
 
-    populateSelect(
-      "categoria",
-      "Categoria original"
-    );
+function fillSelect(id, field){
+  const select = $(id);
+  unique(field).forEach(value=>{
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  });
+}
 
-    populateSelect(
-      "tema",
-      "Tema principal"
-    );
+function setupFilters(){
+  fillSelect("categoria","Categoria original");
+  fillSelect("tema","Tema principal");
+  fillSelect("autor","Autor");
+  fillSelect("editora","Editora");
+}
 
-    populateSelect(
-      "autor",
-      "Autor"
-    );
+function filterBooks(){
+  const q = norm($("search").value.trim());
+  const cat = $("categoria").value;
+  const tema = $("tema").value;
+  const autor = $("autor").value;
+  const editora = $("editora").value;
 
-    populateSelect(
-      "editora",
-      "Editora"
-    );
+  state.filtered = state.books
+    .filter(book =>
+      (!cat || text(book["Categoria original"]) === cat) &&
+      (!tema || text(book["Tema principal"]) === tema) &&
+      (!autor || text(book["Autor"]) === autor) &&
+      (!editora || text(book["Editora"]) === editora)
+    )
+    .map(book=>({book, score:score(book,q)}))
+    .filter(item=>!q || item.score > 0)
+    .sort((a,b)=>
+      b.score-a.score ||
+      text(a.book["Título"]).localeCompare(text(b.book["Título"]),"pt-BR")
+    )
+    .map(item=>item.book);
+
+  render();
+}
+
+function render(){
+  const books = state.filtered;
+  $("count").textContent =
+    `${books.length} livro${books.length===1?"":"s"} encontrado${books.length===1?"":"s"}`;
+
+  if(!books.length){
+    $("results").innerHTML =
+      `<div class="empty"><strong>Nenhum livro encontrado.</strong><br><br>
+       Tente outra palavra ou limpe os filtros.</div>`;
+    return;
   }
 
-  /* Pega os filtros atuais */
-  function getFilters() {
+  $("results").innerHTML = books.map((book,index)=>{
+    const description =
+      text(book["Sinopse de consulta"]) ||
+      text(book["Como apresentar ao cliente (base)"]) ||
+      "Consulte os detalhes deste livro.";
 
-    return {
-
-      query: normalize(
-        $("search")?.value || ""
-      ),
-
-      categoria:
-        $("categoria")?.value || "",
-
-      tema:
-        $("tema")?.value || "",
-
-      autor:
-        $("autor")?.value || "",
-
-      editora:
-        $("editora")?.value || ""
-    };
-  }
-
-  /* Faz a busca */
-  function filterBooks() {
-
-    const filters = getFilters();
-
-    const results = state.books
-
-      .filter((book) => {
-
-        if (
-          filters.categoria &&
-          text(book["Categoria original"]) !==
-          filters.categoria
-        ) {
-          return false;
-        }
-
-        if (
-          filters.tema &&
-          text(book["Tema principal"]) !==
-          filters.tema
-        ) {
-          return false;
-        }
-
-        if (
-          filters.autor &&
-          text(book["Autor"]) !==
-          filters.autor
-        ) {
-          return false;
-        }
-
-        if (
-          filters.editora &&
-          text(book["Editora"]) !==
-          filters.editora
-        ) {
-          return false;
-        }
-
-        return true;
-      })
-
-      .map((book) => ({
-
-        book,
-
-        score: scoreBook(
-          book,
-          filters.query
-        )
-
-      }))
-
-      .filter(
-        (item) => item.score > 0
-      )
-
-      .sort((a, b) => {
-
-        if (b.score !== a.score) {
-          return b.score - a.score;
-        }
-
-        return text(
-          a.book["Título"]
-        ).localeCompare(
-          text(b.book["Título"]),
-          "pt-BR"
-        );
-      })
-
-      .map(
-        (item) => item.book
-      );
-
-    state.filtered = results;
-
-    render();
-  }
-
-  /* Mostra os livros */
-  function render() {
-
-    const count = $("count");
-    const results = $("results");
-
-    if (!count || !results) return;
-
-    const total =
-      state.filtered.length;
-
-    count.textContent =
-      `${total} livro${total === 1 ? "" : "s"} encontrado${total === 1 ? "" : "s"}`;
-
-    if (!total) {
-
-      results.innerHTML = `
-
-        <div class="empty">
-
-          <strong>
-            Nenhum livro encontrado.
-          </strong>
-
-          <br><br>
-
-          Tente outra palavra
-          ou limpe os filtros.
-
+    return `
+      <article class="card">
+        <div class="tag">${esc(book["Tema principal"] || book["Categoria original"] || "Livro")}</div>
+        <h3>${esc(book["Título"] || "Sem título")}</h3>
+        <div class="author">${esc(book["Autor"] || "Autor não informado")}</div>
+        <div class="desc">${esc(description).slice(0,280)}${description.length>280?"…":""}</div>
+        <div class="card-actions">
+          <button class="btn" data-book-index="${index}">Ver detalhes</button>
         </div>
-
-      `;
-
-      return;
-    }
-
-    results.innerHTML =
-      state.filtered
-        .map((book, index) => {
-
-          const description =
-            text(
-              book["Sinopse de consulta"]
-            ) ||
-
-            text(
-              book[
-                "Como apresentar ao cliente (base)"
-              ]
-            ) ||
-
-            "Consulte os detalhes deste livro.";
-
-          const shortDescription =
-            description.length > 280
-              ? description.slice(0, 280) + "…"
-              : description;
-
-          return `
-
-            <article
-              class="card"
-              data-book-index="${index}"
-            >
-
-              <div class="tag">
-
-                ${escapeHtml(
-                  book["Tema principal"] ||
-                  book["Categoria original"] ||
-                  "Livro"
-                )}
-
-              </div>
-
-              <h3>
-
-                ${escapeHtml(
-                  book["Título"] ||
-                  "Sem título"
-                )}
-
-              </h3>
-
-              <div class="author">
-
-                ${escapeHtml(
-                  book["Autor"] ||
-                  "Autor não informado"
-                )}
-
-                ${
-                  book["Editora"]
-                    ? " · " +
-                      escapeHtml(
-                        book["Editora"]
-                      )
-                    : ""
-                }
-
-              </div>
-
-              <div class="desc">
-
-                ${escapeHtml(
-                  shortDescription
-                )}
-
-              </div>
-
-              <div class="card-actions">
-
-                <button
-                  type="button"
-                  class="btn"
-                  data-action="details"
-                  data-book-index="${index}"
-                >
-
-                  Ver detalhes
-
-                </button>
-
-              </div>
-
-            </article>
-
-          `;
-        })
-        .join("");
-  }
-
-  /* Abre detalhes do livro */
-  function openBook(index) {
-
-    const book =
-      state.filtered[index];
-
-    if (!book) return;
-
-    const tags = [
-
-      book["Tema principal"],
-      book["Subtemas"],
-      book["Tipo de livro"],
-      book["Perfil de leitor"]
-
-    ].filter(Boolean);
-
-    const modalContent =
-      $("modalContent");
-
-    if (!modalContent) return;
-
-    modalContent.innerHTML = `
-
-      <div class="tag">
-
-        ${escapeHtml(
-          book["Tema principal"] ||
-          "Keola Books"
-        )}
-
-      </div>
-
-      <h2>
-
-        ${escapeHtml(
-          book["Título"] ||
-          "Sem título"
-        )}
-
-      </h2>
-
-      <div class="author">
-
-        ${escapeHtml(
-          book["Autor"] ||
-          "Autor não informado"
-        )}
-
-        ${
-          book["Editora"]
-            ? " · " +
-              escapeHtml(
-                book["Editora"]
-              )
-            : ""
-        }
-
-      </div>
-
-      <div class="meta">
-
-        ${tags
-          .map(
-            (tag) =>
-              `<span>${escapeHtml(tag)}</span>`
-          )
-          .join("")}
-
-      </div>
-
-      <h4>
-        Sinopse de consulta
-      </h4>
-
-      <p>
-
-        ${escapeHtml(
-          book["Sinopse de consulta"] ||
-          "Não disponível."
-        )}
-
-      </p>
-
-      <h4>
-        Como apresentar ao cliente
-      </h4>
-
-      <p>
-
-        ${escapeHtml(
-          book[
-            "Como apresentar ao cliente (base)"
-          ] ||
-          "Não disponível."
-        )}
-
-      </p>
-
-      <h4>
-        Quando indicar
-      </h4>
-
-      <p>
-
-        ${escapeHtml(
-          book[
-            "Situações de indicação"
-          ] ||
-          "Não disponível."
-        )}
-
-      </p>
-
-      <h4>
-        Palavras-chave
-      </h4>
-
-      <p>
-
-        ${escapeHtml(
-          book["Palavras-chave"] ||
-          "Não disponíveis."
-        )}
-
-      </p>
-
-      <h4>
-        Livros relacionados no catálogo
-      </h4>
-
-      <p>
-
-        ${escapeHtml(
-          book[
-            "Livros relacionados por catálogo"
-          ] ||
-          "Não informado."
-        )}
-
-      </p>
-
-    `;
-
-    const modal = $("modal");
-
-    if (!modal) return;
-
-    if (
-      typeof modal.showModal ===
-      "function"
-    ) {
-
-      modal.showModal();
-
-    } else {
-
-      modal.setAttribute(
-        "open",
-        ""
-      );
-
-    }
-  }
-
-  /* Fecha a janela */
-  function closeModal() {
-
-    const modal = $("modal");
-
-    if (!modal) return;
-
-    if (
-      typeof modal.close ===
-      "function"
-    ) {
-
-      modal.close();
-
-    } else {
-
-      modal.removeAttribute(
-        "open"
-      );
-
-    }
-  }
-
-  /* Limpa todos os filtros */
-  function clearFilters() {
-
-    const search =
-      $("search");
-
-    if (search) {
-      search.value = "";
-    }
-
-    [
-      "categoria",
-      "tema",
-      "autor",
-      "editora"
-    ].forEach((id) => {
-
-      const element = $(id);
-
-      if (element) {
-        element.value = "";
-      }
-
+      </article>`;
+  }).join("");
+
+  document.querySelectorAll("[data-book-index]").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      openBook(Number(btn.dataset.bookIndex));
     });
+  });
+}
 
+function openBook(index){
+  const book = state.filtered[index];
+  if(!book) return;
+
+  const tags = [
+    book["Tema principal"],
+    book["Subtemas"],
+    book["Tipo de livro"],
+    book["Perfil de leitor"]
+  ].filter(Boolean);
+
+  $("modalContent").innerHTML = `
+    <div class="tag">${esc(book["Tema principal"] || "Keola Books")}</div>
+    <h2>${esc(book["Título"])}</h2>
+    <div class="author">
+      ${esc(book["Autor"])}
+      ${book["Editora"] ? " · "+esc(book["Editora"]) : ""}
+    </div>
+
+    <div class="meta">
+      ${tags.map(t=>`<span>${esc(t)}</span>`).join("")}
+    </div>
+
+    <h4>Sinopse de consulta</h4>
+    <p>${esc(book["Sinopse de consulta"] || "Não disponível.")}</p>
+
+    <h4>Como apresentar ao cliente</h4>
+    <p>${esc(book["Como apresentar ao cliente (base)"] || "Não disponível.")}</p>
+
+    <h4>Quando indicar</h4>
+    <p>${esc(book["Situações de indicação"] || "Não disponível.")}</p>
+
+    <h4>Palavras-chave</h4>
+    <p>${esc(book["Palavras-chave"] || "Não disponíveis.")}</p>
+
+    <h4>Livros relacionados no catálogo</h4>
+    <p>${esc(book["Livros relacionados por catálogo"] || "Não informado.")}</p>
+  `;
+
+  $("modal").showModal();
+}
+
+function clearFilters(){
+  $("search").value = "";
+  ["categoria","tema","autor","editora"].forEach(id=>$(id).value="");
+  filterBooks();
+}
+
+function quickSearch(q, countSearch=false){
+  $("search").value = q;
+  filterBooks();
+  if(countSearch) recordSearch(q);
+}
+
+async function loadCatalog(){
+  try{
+    const response = await fetch("./catalogo.json", {cache:"no-store"});
+    if(!response.ok) throw new Error("Não foi possível carregar catalogo.json");
+    state.books = await response.json();
+    setupFilters();
     filterBooks();
-
-    if (search) {
-      search.focus();
-    }
+    loadPopularSearches();
+  }catch(error){
+    console.error(error);
+    $("count").textContent = "Erro ao carregar o catálogo";
+    $("results").innerHTML =
+      `<div class="empty">
+        Não foi possível carregar o catálogo.<br><br>
+        Confirme se <strong>catalogo.json</strong> está na mesma pasta do index.html.
+      </div>`;
   }
+}
 
-  /* Botões rápidos */
-  function quickSearch(query) {
-
-    const search =
-      $("search");
-
-    if (!search) return;
-
-    search.value = query;
-
-    filterBooks();
-
-    search.scrollIntoView({
-      behavior: "smooth",
-      block: "center"
-    });
+$("search").addEventListener("input",filterBooks);
+["categoria","tema","autor","editora"].forEach(id=>{
+  $(id).addEventListener("change",filterBooks);
+});
+$("searchBtn").addEventListener("click",submitSearch);
+$("search").addEventListener("keydown",event=>{
+  if(event.key === "Enter"){
+    event.preventDefault();
+    submitSearch();
   }
+});
+$("clearBtn").addEventListener("click",clearFilters);
+$("closeModal").addEventListener("click",()=>$("modal").close());
 
-  /* Carrega o JSON */
-  async function loadCatalog() {
+// Os atalhos são renderizados dinamicamente por loadPopularSearches().
 
-    const count =
-      $("count");
+$("modal").addEventListener("click",e=>{
+  if(e.target === $("modal")) $("modal").close();
+});
 
-    const results =
-      $("results");
-
-    try {
-
-      const response =
-        await fetch(
-          "./catalogo.json?v=" +
-          Date.now(),
-          {
-            cache: "no-store"
-          }
-        );
-
-      if (!response.ok) {
-
-        throw new Error(
-          "HTTP " +
-          response.status +
-          " ao carregar catalogo.json"
-        );
-      }
-
-      const data =
-        await response.json();
-
-      if (!Array.isArray(data)) {
-
-        throw new Error(
-          "catalogo.json não contém uma lista de livros."
-        );
-      }
-
-      state.books = data;
-
-      setupFilters();
-
-      filterBooks();
-
-      console.log(
-        "Keola Books:",
-        state.books.length,
-        "livros carregados."
-      );
-
-    } catch (error) {
-
-      console.error(
-        "Keola Books:",
-        error
-      );
-
-      if (count) {
-
-        count.textContent =
-          "Erro ao carregar o catálogo";
-
-      }
-
-      if (results) {
-
-        results.innerHTML = `
-
-          <div class="empty">
-
-            <strong>
-              Não foi possível carregar o catálogo.
-            </strong>
-
-            <br><br>
-
-            Verifique se
-            <strong>catalogo.json</strong>
-            está na mesma pasta de
-            <strong>index.html</strong>.
-
-          </div>
-
-        `;
-      }
-    }
-  }
-
-  /* Eventos */
-  function setupEvents() {
-
-    const search =
-      $("search");
-
-    const searchBtn =
-      $("searchBtn");
-
-    const clearBtn =
-      $("clearBtn");
-
-    const closeBtn =
-      $("closeModal");
-
-    const modal =
-      $("modal");
-
-    /* Campo de busca */
-    if (search) {
-
-      search.addEventListener(
-        "input",
-        filterBooks
-      );
-
-      search.addEventListener(
-        "keydown",
-        (event) => {
-
-          if (
-            event.key ===
-            "Enter"
-          ) {
-
-            event.preventDefault();
-
-            filterBooks();
-          }
-        }
-      );
-    }
-
-    /* Botão Buscar */
-    if (searchBtn) {
-
-      searchBtn.addEventListener(
-        "click",
-        (event) => {
-
-          event.preventDefault();
-
-          filterBooks();
-        }
-      );
-    }
-
-    /* Botão Limpar */
-    if (clearBtn) {
-
-      clearBtn.addEventListener(
-        "click",
-        (event) => {
-
-          event.preventDefault();
-
-          clearFilters();
-        }
-      );
-    }
-
-    /* Filtros */
-    [
-      "categoria",
-      "tema",
-      "autor",
-      "editora"
-    ].forEach((id) => {
-
-      const select = $(id);
-
-      if (select) {
-
-        select.addEventListener(
-          "change",
-          filterBooks
-        );
-      }
-
-    });
-
-    /* Fechar modal */
-    if (closeBtn) {
-
-      closeBtn.addEventListener(
-        "click",
-        (event) => {
-
-          event.preventDefault();
-
-          closeModal();
-        }
-      );
-    }
-
-    /*
-      Um único evento para todos
-      os botões da página.
-    */
-    document.addEventListener(
-      "click",
-      (event) => {
-
-        const detailsButton =
-          event.target.closest(
-            "[data-action='details']"
-          );
-
-        if (detailsButton) {
-
-          event.preventDefault();
-
-          event.stopPropagation();
-
-          openBook(
-            Number(
-              detailsButton.dataset.bookIndex
-            )
-          );
-
-          return;
-        }
-
-        const quickButton =
-          event.target.closest(
-            "[data-q]"
-          );
-
-        if (quickButton) {
-
-          event.preventDefault();
-
-          quickSearch(
-            quickButton.dataset.q ||
-            ""
-          );
-        }
-
-      }
-    );
-
-    /* Fechar modal clicando fora */
-    if (modal) {
-
-      modal.addEventListener(
-        "click",
-        (event) => {
-
-          if (
-            event.target ===
-            modal
-          ) {
-
-            closeModal();
-
-          }
-
-        }
-      );
-    }
-  }
-
-  /* Inicialização */
-  function start() {
-
-    setupEvents();
-
-    loadCatalog();
-  }
-
-  if (
-    document.readyState ===
-    "loading"
-  ) {
-
-    document.addEventListener(
-      "DOMContentLoaded",
-      start
-    );
-
-  } else {
-
-    start();
-
-  }
-
-})();
+loadCatalog();
