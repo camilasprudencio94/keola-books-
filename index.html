@@ -28,16 +28,20 @@
     <div class="hero-box">
       <h2>O que essa pessoa está vivendo?</h2>
       <p>Busque por título, autor, tema, necessidade, perfil ou palavras-chave.</p>
+
       <div class="search">
         <input id="search" type="search"
           placeholder="Ex.: casamento, rejeição, pais, liderança..."
           autocomplete="off">
         <button class="btn light" id="searchBtn">Buscar</button>
       </div>
-      <div class="quick" id="quickSearches"
-           aria-label="Buscas mais populares" aria-live="polite">
-        <span class="quick-label">Mais pesquisados nos últimos 30 dias</span>
-        <span class="quick-loading">Carregando atalhos…</span>
+
+      <div class="quick">
+        <button class="chip" data-q="casamento">Casamento</button>
+        <button class="chip" data-q="pais">Pais</button>
+        <button class="chip" data-q="cura">Cura emocional</button>
+        <button class="chip" data-q="liderança">Liderança</button>
+        <button class="chip" data-q="mulheres">Mulheres</button>
       </div>
     </div>
   </div>
@@ -56,7 +60,30 @@
     <button class="btn secondary" id="clearBtn">Limpar filtros</button>
   </div>
 
+  <!-- Identificação informativa, não é um login seguro -->
+  <section class="tracking-panel" style="margin:24px 0;padding:18px;border:1px solid #d9dfd9;border-radius:12px">
+    <h2 style="margin-top:0">Uso do catálogo</h2>
+    <p>Voluntário identificado: <strong id="volunteerName">Carregando...</strong></p>
+    <button class="btn secondary" id="changeVolunteer">Trocar identificação</button>
+
+    <hr style="margin:18px 0;border:0;border-top:1px solid #d9dfd9">
+
+    <h3>Estatísticas deste navegador</h3>
+    <p id="statsSummary">Carregando estatísticas...</p>
+    <div id="topSearches"></div>
+    <button class="btn secondary" id="exportStats" style="margin-top:12px">
+      Exportar histórico deste navegador
+    </button>
+    <button class="btn secondary" id="clearStats" style="margin-top:12px">
+      Apagar histórico deste navegador
+    </button>
+    <p style="font-size:12px;opacity:.75;margin-bottom:0">
+      Os dados ficam somente neste navegador. Não são enviados aos demais voluntários.
+    </p>
+  </section>
+
   <section id="results" class="grid"></section>
+
   <footer>Keola Books · catálogo de consulta</footer>
 </main>
 
@@ -67,6 +94,6 @@
   </div>
 </dialog>
 
-<script src="app.js?v=4"></script>
+<script src="app.js"></script>
 </body>
 </html>
